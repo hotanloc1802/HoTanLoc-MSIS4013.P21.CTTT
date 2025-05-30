@@ -1,0 +1,22 @@
+# fastapi_model_service/requirements.txt
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+confluent-kafka>=2.4.0
+
+# Pin NumPy xuống một phiên bản 1.x ổn định để tránh lỗi tương thích với NumPy 2.x
+# Đặt dòng này trước sentence-transformers và torch
+numpy~=1.26.4
+
+sentence-transformers>=2.2.2
+# Pin torch vào một phiên bản cụ thể mà bạn biết có sẵn bản build cho CPU
+# (kết hợp với --extra-index-url trong Dockerfile)
+torch==2.3.0
+
+# torchvision và torchaudio thường không cần thiết cho sentence-transformers cơ bản
+# Bạn có thể bỏ comment nếu model cụ thể của bạn yêu cầu chúng
+# torchvision==0.17.1
+# torchaudio==2.2.1
+# fastapi_model_service/requirements.txt
+# ... (các thư viện hiện có) ...
+httpx>=0.27.0 # THÊM DÒNG NÀY
+elasticsearch[async]>=8.0.0,<9.0.0 # THÊM DÒNG NÀY (ví dụ: 8.13.0)

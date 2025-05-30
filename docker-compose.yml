@@ -1,0 +1,122 @@
+# version: "3.8" # Bạn có thể xóa dòng này đi, nó không còn cần thiết
+
+services:
+  books.api:
+    image: ${DOCKER_REGISTRY-}booksapi
+    container_name: books.api
+    build:
+      context: .
+      dockerfile: src/Dockerfile # Đảm bảo đường dẫn này đúng, ví dụ src/Books.Api/Dockerfile nếu Dockerfile nằm trong đó
+    ports:
+      - "5000:5000"
+    depends_on:
+      - books.db
+      - books.cache
+      - kafka
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - ConnectionStrings__PostgreSql=Host=books.db;Port=5432;Username=postgres;Password=postgres;Database=books
+      - ConnectionStrings__Redis=books.cache:6379
+      - KafkaProducer__BootstrapServers=kafka:9092
+
+  books.db:
+    image: postgres:latest
+    container_name: books.db
+    environment:
+      POSTGRES_DB: books         # Có thể viết dạng map key: value như này cũng được
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes: # << THÊM VOLUME CHO POSTGRESQL ĐỂ DỮ LIỆU KHÔNG BỊ MẤT
+      - booksdb_volume:/var/lib/postgresql/data # Ví dụ tên volume là booksdb_volume
+    restart: unless-stopped
+
+  books.cache:
+    image: redis:latest
+    container_name: books.cache
+    ports:
+      - "6379:6379"
+    volumes: # << THÊM VOLUME CHO REDIS (TÙY CHỌN NHƯNG NÊN CÓ)
+      - bookscache_volume:/data # Ví dụ tên volume là bookscache_volume
+    restart: always # 'always' hoặc 'unless-stopped'
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true" # << THÊM DÒNG NÀY để tự tạo topic
+    restart: unless-stopped
+  kafka-cli:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-cli
+    depends_on:
+      - kafka
+    entrypoint: [ "sleep", "infinity" ]
+
+  fastapi_model:
+    build:
+      context: ./fastapi_model_service
+      dockerfile: Dockerfile
+    container_name: fastapi_model_service
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    volumes:
+      - ./fastapi_model_service/app:/code/app
+    depends_on:
+      - kafka
+      - elasticsearch # Phụ thuộc này đúng
+    restart: unless-stopped
+
+  # ---- ĐÂY LÀ KHỐI ELASTICSEARCH CẦN ĐƯỢC ĐỊNH NGHĨA NGANG CẤP ----
+  elasticsearch: # << TÊN SERVICE NÀY PHẢI NGANG CẤP THỤT LỀ VỚI fastapi_model, kafka, books.api,...
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: elasticsearch_node
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ---- KHAI BÁO CÁC NAMED VOLUMES Ở CẤP NGOÀI CÙNG ----
+volumes:
+  booksdb_volume: # Volume cho PostgreSQL (nếu bạn đã đặt tên khác thì dùng tên đó)
+  bookscache_volume: # Volume cho Redis (nếu bạn đã đặt tên khác)
+  elasticsearch_data: # Volume cho Elasticsearch
+  # mongodb_data: # (nếu có)
+  # qdrant_data: # (nếu có)
+  # minio_data: # (nếu có)

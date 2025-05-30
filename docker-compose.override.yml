@@ -1,0 +1,37 @@
+services:
+  books.api:
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__PostgreSql=Host=books.db;Port=5432;Username=postgres;Password=postgres;Database=books
+      - ConnectionStrings__Redis=books.cache:6379
+    depends_on:
+      books.db:
+        condition: service_healthy
+      books.cache:
+        condition: service_started
+
+  books.db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_DB=books
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  books.cache:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    restart: always
